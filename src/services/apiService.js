@@ -5,20 +5,16 @@ export async function uploadAudio(audioBlob) {
     // Step 1: Upload the file
     const formData = new FormData();
     formData.append("files", audioBlob, "recording.wav");
-
     const uploadResponse = await fetch(`${BASE_URL}/gradio_api/upload`, {
       method: "POST",
       body: formData,
     });
-
     if (!uploadResponse.ok) {
       const text = await uploadResponse.text();
       return `File upload failed: ${uploadResponse.status} — ${text}`;
     }
-
     const uploadedFiles = await uploadResponse.json();
     console.log("Upload response:", uploadedFiles);
-
     // Handle different response shapes
     let uploadedPath;
     if (Array.isArray(uploadedFiles) && uploadedFiles.length > 0) {
@@ -30,7 +26,6 @@ export async function uploadAudio(audioBlob) {
     } else {
       return `Unexpected upload response: ${JSON.stringify(uploadedFiles)}`;
     }
-
     console.log("Uploaded path:", uploadedPath);
 
     // Step 2: Call the transcribe endpoint
@@ -46,36 +41,30 @@ export async function uploadAudio(audioBlob) {
         ],
       }),
     });
-
     if (!predictResponse.ok) {
       const text = await predictResponse.text();
       return `Predict failed: ${predictResponse.status} — ${text}`;
     }
-
     const jsonResponse = await predictResponse.json();
     console.log("Predict response:", jsonResponse);
     const eventId = jsonResponse.event_id;
-
     if (!eventId) {
       return `No event ID returned: ${JSON.stringify(jsonResponse)}`;
     }
 
-    // Step 3: Poll for result with retries instead of fixed wait
+    // Step 3: Poll for result — check immediately first, then wait between retries
     const resultUrl = `${BASE_URL}/gradio_api/call/transcribe/${eventId}`;
-    const maxAttempts = 15;
-    const delayMs = 4000; // 4 seconds between polls
+    const maxAttempts = 30;  // increased from 15 to cover cold starts (~2 min total)
+    const delayMs = 2000;    // reduced from 4000ms to 2000ms for faster response
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       console.log(`Polling attempt ${attempt}/${maxAttempts}...`);
-      await new Promise((res) => setTimeout(res, delayMs));
-
-      const resultResponse = await fetch(resultUrl);
+      const resultResponse = await fetch(resultUrl); // check immediately, no upfront wait
       console.log(`Poll status: ${resultResponse.status}`);
 
       if (resultResponse.ok) {
         const body = await resultResponse.text();
         console.log("Poll body:", body);
-
         const lines = body.split("\n");
         for (const line of lines) {
           if (line.startsWith("data:")) {
@@ -91,14 +80,14 @@ export async function uploadAudio(audioBlob) {
             }
           }
         }
-
-        // If we got a 200 but couldn't parse yet, keep polling
+        // Got 200 but couldn't parse yet — wait then retry
       } else if (resultResponse.status === 202) {
         // Still processing — keep polling
-        continue;
       } else {
         return `Result fetch failed: ${resultResponse.status}`;
       }
+
+      await new Promise((res) => setTimeout(res, delayMs)); // wait at end, not start
     }
 
     return "Translation timed out. The model is taking too long — please try again.";
