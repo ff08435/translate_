@@ -12,6 +12,7 @@ export default function TranslatorScreen({ navigate }) {
   const [showFeedback, setShowFeedback]     = useState(false);
   const [showFeedbackBtn, setShowFeedbackBtn] = useState(false);
   const [isProcessing, setIsProcessing]     = useState(false);
+  const [statusMsg, setStatusMsg]           = useState('');
 
   const handleRecordPress = useCallback(async () => {
     if (isRecording) {
@@ -22,8 +23,25 @@ export default function TranslatorScreen({ navigate }) {
 
       if (blob) {
         setIsProcessing(true);
+        setStatusMsg('');
         setTranslation('Processing audio…');
-        const result = await uploadAudio(blob);
+
+        const handleSpaceStatus = (status) => {
+          if (status.status === 'paused' || status.status === 'stopped') {
+            setStatusMsg('The translation server is currently paused by its owner. Please try again later.');
+          } else if (status.status === 'sleeping') {
+            setStatusMsg('Waking up the server… this may take up to a minute.');
+          } else if (status.status === 'building') {
+            setStatusMsg('Server is building… please wait.');
+          } else if (status.status === 'running') {
+            setStatusMsg('');
+          } else if (status.status === 'error' || status.status === 'space_error') {
+            setStatusMsg('Server error. Retrying…');
+          }
+        };
+
+        const result = await uploadAudio(blob, handleSpaceStatus);
+        setStatusMsg('');
         setTranslation(
           result ??
           'Could not reach the translation server. The backend may be sleeping — try again in a moment.'
@@ -77,7 +95,9 @@ export default function TranslatorScreen({ navigate }) {
             onPress={handleRecordPress}
           />
           <p className={styles.recordLabel}>
-            {isProcessing
+            {statusMsg
+              ? statusMsg
+              : isProcessing
               ? 'Processing…'
               : isRecording
               ? 'Recording… tap to stop'
