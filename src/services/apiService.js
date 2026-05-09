@@ -1,5 +1,5 @@
 const BASE_URL = "https://fatima983-website-translation-backend.hf.space";
-const HF_TOKEN = "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"; // replace with your full token
+const HF_TOKEN = "hf_...yjFT"; // replace with your full token
 
 // Keep Space awake — ping every 4 minutes
 setInterval(() => {
@@ -35,7 +35,7 @@ export async function uploadAudio(audioBlob) {
     }
     console.log("Uploaded path:", uploadedPath);
 
-    // Step 2: Call the transcribe endpoint
+    // Step 2: Call the transcribe endpoint — pass path as plain string
     const predictResponse = await fetch(`${BASE_URL}/gradio_api/call/transcribe`, {
       method: "POST",
       headers: { 
@@ -43,16 +43,8 @@ export async function uploadAudio(audioBlob) {
         "Authorization": `Bearer ${HF_TOKEN}`
       },
       body: JSON.stringify({
-  data: [
-    {
-      path: uploadedPath,
-      url: `${BASE_URL}/gradio_api/file=${uploadedPath}`,
-      orig_name: "recording.wav",
-      mime_type: "audio/wav",
-      meta: { _type: "gradio.FileData" }
-    }
-  ],
-}),
+        data: [uploadedPath]
+      }),
     });
 
     if (!predictResponse.ok) {
