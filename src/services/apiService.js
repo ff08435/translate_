@@ -1,5 +1,6 @@
 const BASE_URL = "https://fatima983-website-translation-backend.hf.space";
 
+// Keep Space awake — ping every 4 minutes
 setInterval(() => {
   fetch(`${BASE_URL}/`).catch(() => {});
 }, 4 * 60 * 1000);
@@ -28,25 +29,31 @@ async function tryOnce(eventId) {
 
   const reader = streamResponse.body.getReader();
   const decoder = new TextDecoder();
-  let fullText = "";
+
+  let buffer = "";
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    fullText += decoder.decode(value);
-  }
+    buffer += decoder.decode(value, { stream: true });
 
-  const lines = fullText.split("\n");
-  for (const line of lines) {
-    if (line.startsWith("event: error")) return null; // signal to retry
-    if (line.startsWith("data:")) {
-      const raw = line.substring(5).trim();
-      if (raw === "null") continue;
-      try {
-        const data = JSON.parse(raw);
-        if (Array.isArray(data) && data.length > 0) return data[0].toString();
-        if (typeof data === "string") return data;
-      } catch (e) {
-        console.warn("Parse error:", e);
+    const lines = buffer.split("\n");
+    buffer = lines.pop(); // keep incomplete last line in buffer
+
+    for (const line of lines) {
+      if (line.startsWith("event: error")) {
+        console.warn("Hard error event received");
+        return null;
+      }
+      if (line.startsWith("data:")) {
+        const raw = line.substring(5).trim();
+        if (raw === "null") continue; // heartbeat, keep reading
+        try {
+          const data = JSON.parse(raw);
+          if (Array.isArray(data) && data.length > 0) return data[0].toString();
+          if (typeof data === "string") return data;
+        } catch (e) {
+          console.warn("Parse error:", e);
+        }
       }
     }
   }
@@ -55,7 +62,7 @@ async function tryOnce(eventId) {
 
 export async function uploadAudio(audioBlob) {
   try {
-    // Step 1: Upload
+    // Step 1: Upload the file
     const formData = new FormData();
     formData.append("files", audioBlob, "recording.wav");
     const uploadResponse = await fetch(`${BASE_URL}/gradio_api/upload`, {
@@ -67,6 +74,7 @@ export async function uploadAudio(audioBlob) {
       return `File upload failed: ${uploadResponse.status} — ${text}`;
     }
     const uploadedFiles = await uploadResponse.json();
+    console.log("Upload response:", uploadedFiles);
 
     let uploadedPath;
     if (Array.isArray(uploadedFiles) && uploadedFiles.length > 0) {
@@ -81,24 +89,26 @@ export async function uploadAudio(audioBlob) {
     console.log("Uploaded path:", uploadedPath);
 
     // Step 2: Retry loop — fresh event ID each attempt
-    const delays = [1000, 3000, 4000, 4000, 4000, 5000, 5000, 5000, 5000, 5000];
-    const maxAttempts = delays.length;
-
+    const maxAttempts = 3;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      await new Promise((res) => setTimeout(res, delays[attempt - 1]));
-      console.log(`Attempt ${attempt}/${maxAttempts} — requesting new event ID...`);
-
+      console.log(`Attempt ${attempt}/${maxAttempts} — requesting event ID...`);
       try {
         const eventId = await getEventId(uploadedPath);
         console.log("Event ID:", eventId);
+
         const result = await tryOnce(eventId);
         if (result !== null) {
           console.log("Got result:", result);
           return result;
         }
-        console.warn(`Attempt ${attempt} returned error/null, retrying...`);
+        console.warn(`Attempt ${attempt} returned null, retrying...`);
       } catch (err) {
         console.warn(`Attempt ${attempt} error:`, err.message);
+      }
+
+      // Wait before retrying (only if not last attempt)
+      if (attempt < maxAttempts) {
+        await new Promise((res) => setTimeout(res, 3000));
       }
     }
 
