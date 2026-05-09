@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "dependencies": {
+    "@gradio/client": "^2.2.0",
     "@supabase/supabase-js": "^2.103.0",
     "firebase": "^10.14.1",
     "react": "^18.2.0",
