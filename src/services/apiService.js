@@ -20,7 +20,7 @@ export async function uploadAudio(audioBlob) {
     }
     const uploadedFiles = await uploadResponse.json();
     console.log("Upload response:", uploadedFiles);
-    // Handle different response shapes
+
     let uploadedPath;
     if (Array.isArray(uploadedFiles) && uploadedFiles.length > 0) {
       uploadedPath = uploadedFiles[0];
@@ -32,63 +32,54 @@ export async function uploadAudio(audioBlob) {
       return `Unexpected upload response: ${JSON.stringify(uploadedFiles)}`;
     }
     console.log("Uploaded path:", uploadedPath);
+
     // Step 2: Call the transcribe endpoint
     const predictResponse = await fetch(`${BASE_URL}/gradio_api/call/transcribe`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        data: [
-          {
-            path: uploadedPath,
-            meta: { _type: "gradio.FileData" },
-          },
-        ],
+        data: [{ path: uploadedPath, meta: { _type: "gradio.FileData" } }],
       }),
     });
+
     if (!predictResponse.ok) {
       const text = await predictResponse.text();
       return `Predict failed: ${predictResponse.status} — ${text}`;
     }
-    const jsonResponse = await predictResponse.json();
-    console.log("Predict response:", jsonResponse);
-    const eventId = jsonResponse.event_id;
-    if (!eventId) {
-      return `No event ID returned: ${JSON.stringify(jsonResponse)}`;
-    }
-    // Step 3: Poll for result
-    const resultUrl = `${BASE_URL}/gradio_api/call/transcribe/${eventId}`;
-    const maxAttempts = 60;  // 3 minutes total
-    const delayMs = 3000;    // 3 seconds between polls
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      console.log(`Polling attempt ${attempt}/${maxAttempts}...`);
-      const resultResponse = await fetch(resultUrl);
-      console.log(`Poll status: ${resultResponse.status}`);
-      if (resultResponse.ok) {
-        const body = await resultResponse.text();
-        console.log("Poll body:", body);
-        const lines = body.split("\n");
-        for (const line of lines) {
-          if (line.startsWith("data:")) {
-            try {
-              const data = JSON.parse(line.substring(5).trim());
-              if (Array.isArray(data) && data.length > 0) {
-                return data[0].toString();
-              } else if (typeof data === "string") {
-                return data;
-              }
-            } catch (parseErr) {
-              console.warn("Parse error on line:", line, parseErr);
+
+    const { event_id } = await predictResponse.json();
+    console.log("Event ID:", event_id);
+    if (!event_id) return "No event ID returned";
+
+    // Step 3: Stream the result
+    const resultUrl = `${BASE_URL}/gradio_api/call/transcribe/${event_id}`;
+    const streamResponse = await fetch(resultUrl);
+    const reader = streamResponse.body.getReader();
+    const decoder = new TextDecoder();
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const text = decoder.decode(value);
+      console.log("Stream chunk:", text);
+      const lines = text.split("\n");
+      for (const line of lines) {
+        if (line.startsWith("data:")) {
+          try {
+            const data = JSON.parse(line.substring(5).trim());
+            if (Array.isArray(data) && data.length > 0) {
+              return data[0].toString();
+            } else if (typeof data === "string") {
+              return data;
             }
+          } catch (parseErr) {
+            console.warn("Parse error on line:", line, parseErr);
           }
         }
-      } else if (resultResponse.status === 202) {
-        // Still processing — keep polling
-      } else {
-        return `Result fetch failed: ${resultResponse.status}`;
       }
-      await new Promise((res) => setTimeout(res, delayMs));
     }
-    return "Translation timed out. Please try again.";
+    return "No result received";
+
   } catch (err) {
     console.error("API error:", err);
     return `Error: ${err.message}. The backend may be sleeping — please visit https://fatima983-website-translation-backend.hf.space to wake it up, then try again.`;
