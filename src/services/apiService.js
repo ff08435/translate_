@@ -35,7 +35,7 @@ export async function uploadAudio(audioBlob) {
     }
     console.log("Uploaded path:", uploadedPath);
 
-    // Step 2: Call the transcribe endpoint — pass path as plain string
+    // Step 2: Call the transcribe endpoint
     const predictResponse = await fetch(`${BASE_URL}/gradio_api/call/transcribe`, {
       method: "POST",
       headers: { 
@@ -43,7 +43,12 @@ export async function uploadAudio(audioBlob) {
         "Authorization": `Bearer ${HF_TOKEN}`
       },
       body: JSON.stringify({
-        data: [uploadedPath]
+        data: [{
+          path: uploadedPath,
+          url: `${BASE_URL}/gradio_api/file=${uploadedPath}`,
+          orig_name: "recording.wav",
+          meta: { _type: "gradio.FileData" }
+        }]
       }),
     });
 
