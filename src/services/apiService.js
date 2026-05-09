@@ -1,5 +1,10 @@
 const BASE_URL = "https://fatima983-website-translation-backend.hf.space";
 
+// Keep Space awake — ping every 4 minutes
+setInterval(() => {
+  fetch(`${BASE_URL}/`).catch(() => {});
+}, 4 * 60 * 1000);
+
 export async function uploadAudio(audioBlob) {
   try {
     // Step 1: Upload the file
@@ -27,7 +32,6 @@ export async function uploadAudio(audioBlob) {
       return `Unexpected upload response: ${JSON.stringify(uploadedFiles)}`;
     }
     console.log("Uploaded path:", uploadedPath);
-
     // Step 2: Call the transcribe endpoint
     const predictResponse = await fetch(`${BASE_URL}/gradio_api/call/transcribe`, {
       method: "POST",
@@ -51,17 +55,14 @@ export async function uploadAudio(audioBlob) {
     if (!eventId) {
       return `No event ID returned: ${JSON.stringify(jsonResponse)}`;
     }
-
-    // Step 3: Poll for result — check immediately first, then wait between retries
+    // Step 3: Poll for result
     const resultUrl = `${BASE_URL}/gradio_api/call/transcribe/${eventId}`;
-    const maxAttempts = 30;  // increased from 15 to cover cold starts (~2 min total)
-    const delayMs = 2000;    // reduced from 4000ms to 2000ms for faster response
-
+    const maxAttempts = 60;  // 3 minutes total
+    const delayMs = 3000;    // 3 seconds between polls
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       console.log(`Polling attempt ${attempt}/${maxAttempts}...`);
-      const resultResponse = await fetch(resultUrl); // check immediately, no upfront wait
+      const resultResponse = await fetch(resultUrl);
       console.log(`Poll status: ${resultResponse.status}`);
-
       if (resultResponse.ok) {
         const body = await resultResponse.text();
         console.log("Poll body:", body);
@@ -80,19 +81,16 @@ export async function uploadAudio(audioBlob) {
             }
           }
         }
-        // Got 200 but couldn't parse yet — wait then retry
       } else if (resultResponse.status === 202) {
         // Still processing — keep polling
       } else {
         return `Result fetch failed: ${resultResponse.status}`;
       }
-
-      await new Promise((res) => setTimeout(res, delayMs)); // wait at end, not start
+      await new Promise((res) => setTimeout(res, delayMs));
     }
-
-    return "Translation timed out. The model is taking too long — please try again.";
+    return "Translation timed out. Please try again.";
   } catch (err) {
     console.error("API error:", err);
-    return `Error: ${err.message}. The backend may be sleeping — please visit https://fatima983-burushaski-backend.hf.space to wake it up, then try again.`;
+    return `Error: ${err.message}. The backend may be sleeping — please visit https://fatima983-website-translation-backend.hf.space to wake it up, then try again.`;
   }
 }
