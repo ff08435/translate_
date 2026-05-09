@@ -1,5 +1,5 @@
 const BASE_URL = "https://fatima983-website-translation-backend.hf.space";
-const HF_TOKEN = "hf_...yjFT"; // replace with your full token
+const HF_TOKEN = "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"; // replace with your full token
 
 // Keep Space awake — ping every 4 minutes
 setInterval(() => {
