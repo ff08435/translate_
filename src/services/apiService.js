@@ -15,6 +15,6 @@ export async function uploadAudio(audioBlob) {
     return result.data[0];
   } catch (err) {
     console.error("API error:", err);
-    return Error: ${err.message}. The backend may be sleeping or quota exceeded.;
+    return `Error: ${err.message}. The backend may be sleeping or quota exceeded.`;
   }
 }
