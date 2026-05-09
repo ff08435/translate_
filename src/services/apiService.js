@@ -9,7 +9,7 @@ export async function uploadAudio(audioBlob) {
   try {
     // Step 1: Upload the file
     const formData = new FormData();
-    formData.append("files", audioBlob, "recording.webm");
+    formData.append("files", audioBlob, "recording.wav");
     const uploadResponse = await fetch(`${BASE_URL}/gradio_api/upload`, {
       method: "POST",
       body: formData,
