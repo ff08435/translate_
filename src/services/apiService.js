@@ -1,64 +1,10 @@
 const BASE_URL = "https://fatima983-website-translation-backend.hf.space";
+const HF_TOKEN = "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"; // replace with your full token
 
 // Keep Space awake — ping every 4 minutes
 setInterval(() => {
   fetch(`${BASE_URL}/`).catch(() => {});
 }, 4 * 60 * 1000);
-
-async function getEventId(uploadedPath) {
-  const predictResponse = await fetch(`${BASE_URL}/gradio_api/call/transcribe`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      data: [{ path: uploadedPath, meta: { _type: "gradio.FileData" } }],
-    }),
-  });
-  if (!predictResponse.ok) {
-    const text = await predictResponse.text();
-    throw new Error(`Predict failed: ${predictResponse.status} — ${text}`);
-  }
-  const { event_id } = await predictResponse.json();
-  if (!event_id) throw new Error("No event ID returned");
-  return event_id;
-}
-
-async function tryOnce(eventId) {
-  const resultUrl = `${BASE_URL}/gradio_api/call/transcribe/${eventId}`;
-  const streamResponse = await fetch(resultUrl);
-  if (!streamResponse.ok) return null;
-
-  const reader = streamResponse.body.getReader();
-  const decoder = new TextDecoder();
-
-  let buffer = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-
-    const lines = buffer.split("\n");
-    buffer = lines.pop(); // keep incomplete last line in buffer
-
-    for (const line of lines) {
-      if (line.startsWith("event: error")) {
-        console.warn("Hard error event received");
-        return null;
-      }
-      if (line.startsWith("data:")) {
-        const raw = line.substring(5).trim();
-        if (raw === "null") continue; // heartbeat, keep reading
-        try {
-          const data = JSON.parse(raw);
-          if (Array.isArray(data) && data.length > 0) return data[0].toString();
-          if (typeof data === "string") return data;
-        } catch (e) {
-          console.warn("Parse error:", e);
-        }
-      }
-    }
-  }
-  return null;
-}
 
 export async function uploadAudio(audioBlob) {
   try {
@@ -67,6 +13,7 @@ export async function uploadAudio(audioBlob) {
     formData.append("files", audioBlob, "recording.wav");
     const uploadResponse = await fetch(`${BASE_URL}/gradio_api/upload`, {
       method: "POST",
+      headers: { "Authorization": `Bearer ${HF_TOKEN}` },
       body: formData,
     });
     if (!uploadResponse.ok) {
@@ -88,31 +35,57 @@ export async function uploadAudio(audioBlob) {
     }
     console.log("Uploaded path:", uploadedPath);
 
-    // Step 2: Retry loop — fresh event ID each attempt
-    const maxAttempts = 3;
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      console.log(`Attempt ${attempt}/${maxAttempts} — requesting event ID...`);
-      try {
-        const eventId = await getEventId(uploadedPath);
-        console.log("Event ID:", eventId);
+    // Step 2: Call the transcribe endpoint
+    const predictResponse = await fetch(`${BASE_URL}/gradio_api/call/transcribe`, {
+      method: "POST",
+      headers: { 
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${HF_TOKEN}`
+      },
+      body: JSON.stringify({
+        data: [{ path: uploadedPath, meta: { _type: "gradio.FileData" } }],
+      }),
+    });
 
-        const result = await tryOnce(eventId);
-        if (result !== null) {
-          console.log("Got result:", result);
-          return result;
-        }
-        console.warn(`Attempt ${attempt} returned null, retrying...`);
-      } catch (err) {
-        console.warn(`Attempt ${attempt} error:`, err.message);
-      }
-
-      // Wait before retrying (only if not last attempt)
-      if (attempt < maxAttempts) {
-        await new Promise((res) => setTimeout(res, 3000));
-      }
+    if (!predictResponse.ok) {
+      const text = await predictResponse.text();
+      return `Predict failed: ${predictResponse.status} — ${text}`;
     }
 
-    return "Translation timed out — the GPU may be busy. Please try again in a moment.";
+    const { event_id } = await predictResponse.json();
+    console.log("Event ID:", event_id);
+    if (!event_id) return "No event ID returned";
+
+    // Step 3: Stream the result
+    const resultUrl = `${BASE_URL}/gradio_api/call/transcribe/${event_id}`;
+    const streamResponse = await fetch(resultUrl, {
+      headers: { "Authorization": `Bearer ${HF_TOKEN}` }
+    });
+    const reader = streamResponse.body.getReader();
+    const decoder = new TextDecoder();
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const text = decoder.decode(value);
+      console.log("Stream chunk:", text);
+      const lines = text.split("\n");
+      for (const line of lines) {
+        if (line.startsWith("data:")) {
+          try {
+            const data = JSON.parse(line.substring(5).trim());
+            if (Array.isArray(data) && data.length > 0) {
+              return data[0].toString();
+            } else if (typeof data === "string") {
+              return data;
+            }
+          } catch (parseErr) {
+            console.warn("Parse error on line:", line, parseErr);
+          }
+        }
+      }
+    }
+    return "No result received";
 
   } catch (err) {
     console.error("API error:", err);
