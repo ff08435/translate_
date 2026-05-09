@@ -1,6 +1,6 @@
 import { Client, handle_file } from "@gradio/client";
 
-const HF_TOKEN = "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";
+const HF_TOKEN = process.env.REACT_APP_HF_TOKEN;
 const SPACE = "Fatima983/website-translation-backend";
 
 const FATAL_STATUSES = new Set(["paused", "stopped", "space_error"]);
