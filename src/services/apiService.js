@@ -43,8 +43,16 @@ export async function uploadAudio(audioBlob) {
         "Authorization": `Bearer ${HF_TOKEN}`
       },
       body: JSON.stringify({
-        data: [{ path: uploadedPath, meta: { _type: "gradio.FileData" } }],
-      }),
+  data: [
+    {
+      path: uploadedPath,
+      url: `${BASE_URL}/gradio_api/file=${uploadedPath}`,
+      orig_name: "recording.wav",
+      mime_type: "audio/wav",
+      meta: { _type: "gradio.FileData" }
+    }
+  ],
+}),
     });
 
     if (!predictResponse.ok) {
