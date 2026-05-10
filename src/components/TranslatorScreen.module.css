@@ -199,6 +199,8 @@
   color: var(--text-dark-gray);
   letter-spacing: 0.3px;
   min-height: 22px;
+  margin-top: 20px; /* add this */
+
 }
 
 /* ─── Output card ────────────────────────────────────────── */
