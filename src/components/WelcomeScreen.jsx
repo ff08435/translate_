@@ -30,7 +30,7 @@ export default function WelcomeScreen({ navigate }) {
         </div>
 
         {/* App name */}
-        <h1 className={styles.appName} style={{ animationDelay: '0.2s' }}>YARAN</h1>
+        <h1 className={styles.appName} style={{ animationDelay: '0.2s' }}>YAARAN</h1>
 
         <p className={styles.tagline} style={{ animationDelay: '0.3s' }}>
           Burushaski → English
